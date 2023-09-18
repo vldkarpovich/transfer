@@ -1,0 +1,25 @@
+build/
+pkg/
+dist/
+src/
+bin/
+*.pyc
+*.egg-info/
+.idea/
+
+.tmp
+.vagrant
+
+bower_components/
+node_modules/
+.vscode/
+
+transfersh-server/run.sh
+.elasticbeanstalk/
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+
+!.github/build/
