@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -42,19 +43,44 @@ func (s *LocalStorage) Head(_ context.Context, token string, filename string) (c
 }
 
 // Get retrieves a file from storage
-func (s *LocalStorage) Get(_ context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, contentLength uint64, err error) {
-	path := filepath.Join(s.basedir, token, filename)
+func (s *LocalStorage) Get(_ context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, fName string, contentLength uint64, err error) {
+	path := filepath.Join(s.basedir, token)
 
 	var file *os.File
 
+	files, err := os.ReadDir(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var fileName string
+	if filename == ".metadata" {
+		for _, entry := range files {
+			if strings.HasSuffix(entry.Name(), ".metadata") {
+				fileName = entry.Name()
+				break
+			}
+		}
+	} else {
+		for _, entry := range files {
+			if !strings.HasSuffix(entry.Name(), ".metadata") {
+				fileName = entry.Name()
+				fName = entry.Name()
+				break
+			}
+		}
+	}
+
+	filePath := filepath.Join(path, fileName)
+
 	// content type , content length
-	if file, err = os.Open(path); err != nil {
+	if file, err = os.Open(filePath); err != nil {
 		return
 	}
 	reader = file
 
 	var fi os.FileInfo
-	if fi, err = os.Lstat(path); err != nil {
+	if fi, err = os.Lstat(filePath); err != nil {
 		return
 	}
 
@@ -70,11 +96,26 @@ func (s *LocalStorage) Get(_ context.Context, token string, filename string, rng
 }
 
 // Delete removes a file from storage
-func (s *LocalStorage) Delete(_ context.Context, token string, filename string) (err error) {
-	metadata := filepath.Join(s.basedir, token, fmt.Sprintf("%s.metadata", filename))
+func (s *LocalStorage) Delete(_ context.Context, token string) (err error) {
+	filePath := filepath.Join(s.basedir, token)
+	files, err := os.ReadDir(filePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var fileName string
+
+	for _, entry := range files {
+		if !strings.HasSuffix(entry.Name(), ".metadata") {
+			fileName = entry.Name()
+			break
+		}
+	}
+
+	metadata := filepath.Join(s.basedir, token, fmt.Sprintf("%s.metadata", fileName))
 	_ = os.Remove(metadata)
 
-	path := filepath.Join(s.basedir, token, filename)
+	path := filepath.Join(s.basedir, token, fileName)
 	err = os.Remove(path)
 	return
 }

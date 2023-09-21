@@ -175,8 +175,12 @@ func (s *GDrive) Type() string {
 
 // Head retrieves content length of a file from storage
 func (s *GDrive) Head(ctx context.Context, token string, filename string) (contentLength uint64, err error) {
-	var fileID string
-	fileID, err = s.findID(filename, token)
+	// var fileID string
+	// fileID, err = s.findID(filename, token)
+	// if err != nil {
+	// 	return
+	// }
+	_, fileID, err := s.getFileName(filename, token)
 	if err != nil {
 		return
 	}
@@ -192,13 +196,11 @@ func (s *GDrive) Head(ctx context.Context, token string, filename string) (conte
 }
 
 // Get retrieves a file from storage
-func (s *GDrive) Get(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, contentLength uint64, err error) {
-	var fileID string
-	fileID, err = s.findID(filename, token)
+func (s *GDrive) Get(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, fName string, contentLength uint64, err error) {
+	fName, fileID, err := s.getFileName(filename, token)
 	if err != nil {
 		return
 	}
-
 	var fi *drive.File
 	fi, err = s.service.Files.Get(fileID).Fields("size", "md5Checksum").Do()
 	if err != nil {
@@ -234,13 +236,40 @@ func (s *GDrive) Get(ctx context.Context, token string, filename string, rng *Ra
 	return
 }
 
+func (s *GDrive) getFileName(metaFlag, token string) (fileName, fileID string, err error) {
+	q := fmt.Sprintf("'%s' in parents and trashed=false", token)
+	fileList, err := s.service.Files.List().Q(q).Fields("files(id, name, size, md5Checksum)").Do()
+	if err != nil {
+		return
+	}
+
+	for _, file := range fileList.Files {
+
+		if metaFlag == ".metadata" && strings.HasSuffix(file.Name, ".metadata") {
+			fileID = file.Id
+			fileName = file.Name
+			break
+		} else if metaFlag != ".metadata" && !strings.HasSuffix(file.Name, ".metadata") {
+			fileID = file.Id
+			fileName = file.Name
+			break
+		}
+	}
+	return
+}
+
 // Delete removes a file from storage
-func (s *GDrive) Delete(ctx context.Context, token string, filename string) (err error) {
-	metadata, _ := s.findID(fmt.Sprintf("%s.metadata", filename), token)
-	_ = s.service.Files.Delete(metadata).Do()
+func (s *GDrive) Delete(ctx context.Context, token string) (err error) {
+
+	fName, metadatafileID, err := s.getFileName(".metadata", token)
+	if err != nil {
+		return
+	}
+
+	_ = s.service.Files.Delete(metadatafileID).Do()
 
 	var fileID string
-	fileID, err = s.findID(filename, token)
+	fileID, err = s.findID(fName, token)
 	if err != nil {
 		return
 	}

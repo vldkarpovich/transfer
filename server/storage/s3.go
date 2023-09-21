@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -57,21 +58,28 @@ func (s *S3Storage) Type() string {
 
 // Head retrieves content length of a file from storage
 func (s *S3Storage) Head(ctx context.Context, token string, filename string) (contentLength uint64, err error) {
-	key := fmt.Sprintf("%s/%s", token, filename)
 
-	headRequest := &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
+	_, selectedKey, err := s.getFileName(ctx, filename, s.bucket, token)
+	if err != nil {
+		return
 	}
 
-	// content type , content length
-	response, err := s.s3.HeadObject(ctx, headRequest)
+	if selectedKey == "" {
+		// file not found
+		return
+	}
+
+	getRequest := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(selectedKey),
+	}
+
+	response, err := s.s3.GetObject(ctx, getRequest)
 	if err != nil {
 		return
 	}
 
 	contentLength = uint64(response.ContentLength)
-
 	return
 }
 
@@ -92,16 +100,21 @@ func (s *S3Storage) IsNotExist(err error) bool {
 }
 
 // Get retrieves a file from storage
-func (s *S3Storage) Get(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, contentLength uint64, err error) {
-	key := fmt.Sprintf("%s/%s", token, filename)
+func (s *S3Storage) Get(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, fName string, contentLength uint64, err error) {
+
+	fName, selectedKey, err := s.getFileName(ctx, filename, s.bucket, token)
+	if err != nil {
+		return
+	}
+
+	if selectedKey == "" {
+		// file not found
+		return
+	}
 
 	getRequest := &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
-	}
-
-	if rng != nil {
-		getRequest.Range = aws.String(rng.Range())
+		Key:    aws.String(selectedKey),
 	}
 
 	response, err := s.s3.GetObject(ctx, getRequest)
@@ -118,12 +131,47 @@ func (s *S3Storage) Get(ctx context.Context, token string, filename string, rng 
 	return
 }
 
+func (s *S3Storage) getFileName(ctx context.Context, metadataFlag, bucket, token string) (fileName, selectedKey string, err error) {
+
+	key := fmt.Sprintf("%s/", token)
+
+	listInput := &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(key),
+	}
+
+	result, err := s.s3.ListObjectsV2(ctx, listInput)
+	if err != nil {
+		return
+	}
+
+	for _, item := range result.Contents {
+		itemkey := *item.Key
+		if metadataFlag == ".metadata" && strings.HasSuffix(itemkey, ".metadata") {
+			selectedKey = itemkey
+			break
+		} else if metadataFlag != ".metadata" && !strings.HasSuffix(itemkey, ".metadata") {
+			selectedKey = itemkey
+			parts := strings.Split(itemkey, "/")
+			name := parts[len(parts)-1]
+			fileName = name
+			break
+		}
+	}
+
+	return
+}
+
 // Delete removes a file from storage
-func (s *S3Storage) Delete(ctx context.Context, token string, filename string) (err error) {
-	metadata := fmt.Sprintf("%s/%s.metadata", token, filename)
+func (s *S3Storage) Delete(ctx context.Context, token string) (err error) {
+
+	_, selectedKey, err := s.getFileName(ctx, ".metadata", s.bucket, token)
+	if err != nil {
+		return
+	}
 	deleteRequest := &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(metadata),
+		Key:    aws.String(selectedKey),
 	}
 
 	_, err = s.s3.DeleteObject(ctx, deleteRequest)
@@ -131,10 +179,15 @@ func (s *S3Storage) Delete(ctx context.Context, token string, filename string) (
 		return
 	}
 
-	key := fmt.Sprintf("%s/%s", token, filename)
+	_, selectedKey, err = s.getFileName(ctx, "", s.bucket, token)
+	if err != nil {
+		return
+	}
+
+	//key := fmt.Sprintf("%s/%s", token, filename)
 	deleteRequest = &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
+		Key:    aws.String(selectedKey),
 	}
 
 	_, err = s.s3.DeleteObject(ctx, deleteRequest)

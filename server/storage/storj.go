@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"storj.io/common/fpath"
@@ -63,7 +64,12 @@ func (s *StorjStorage) Type() string {
 
 // Head retrieves content length of a file from storage
 func (s *StorjStorage) Head(ctx context.Context, token string, filename string) (contentLength uint64, err error) {
-	key := storj.JoinPaths(token, filename)
+	fName, err := s.getFileName(ctx, token, filename)
+	if err != nil {
+		return
+	}
+
+	key := storj.JoinPaths(token, fName)
 
 	obj, err := s.project.StatObject(fpath.WithTempData(ctx, "", true), s.bucket.Name, key)
 	if err != nil {
@@ -76,25 +82,27 @@ func (s *StorjStorage) Head(ctx context.Context, token string, filename string) 
 }
 
 // Get retrieves a file from storage
-func (s *StorjStorage) Get(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, contentLength uint64, err error) {
-	key := storj.JoinPaths(token, filename)
+func (s *StorjStorage) Get(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, fName string, contentLength uint64, err error) {
+	fName, err = s.getFileName(ctx, token, filename)
+	if err != nil {
+		return
+	}
 
-	s.logger.Printf("Getting file %s from Storj Bucket", filename)
-
-	var options *uplink.DownloadOptions
+	var optionsObject *uplink.DownloadOptions
 	if rng != nil {
-		options = new(uplink.DownloadOptions)
-		options.Offset = int64(rng.Start)
+		optionsObject = new(uplink.DownloadOptions)
+		optionsObject.Offset = int64(rng.Start)
 		if rng.Limit > 0 {
-			options.Length = int64(rng.Limit)
+			optionsObject.Length = int64(rng.Limit)
 		} else {
-			options.Length = -1
+			optionsObject.Length = -1
 		}
 	}
 
-	download, err := s.project.DownloadObject(fpath.WithTempData(ctx, "", true), s.bucket.Name, key, options)
+	key := storj.JoinPaths(token, fName)
+	download, err := s.project.DownloadObject(fpath.WithTempData(ctx, "", true), s.bucket.Name, key, optionsObject)
 	if err != nil {
-		return nil, 0, err
+		return
 	}
 
 	contentLength = uint64(download.Info().System.ContentLength)
@@ -103,15 +111,50 @@ func (s *StorjStorage) Get(ctx context.Context, token string, filename string, r
 	}
 
 	reader = download
+
+	return
+}
+
+func (s *StorjStorage) getFileName(ctx context.Context, token string, metaFlag string) (fileName string, err error) {
+	optionsList := &uplink.ListObjectsOptions{Prefix: token + "/"}
+	iterator := s.project.ListObjects(ctx, s.bucket.Name, optionsList)
+
+	for iterator.Next() {
+		object := iterator.Item()
+		itemkey := object.Key
+
+		if metaFlag == ".metadata" && strings.HasSuffix(strings.TrimPrefix(itemkey, token+"/"), ".metadata") {
+			fileName = strings.TrimPrefix(itemkey, token+"/")
+			break
+		} else if metaFlag != ".metadata" && !strings.HasSuffix(itemkey, ".metadata") {
+			fileName = strings.TrimPrefix(itemkey, token+"/")
+			break
+		}
+	}
 	return
 }
 
 // Delete removes a file from storage
-func (s *StorjStorage) Delete(ctx context.Context, token string, filename string) (err error) {
+func (s *StorjStorage) Delete(ctx context.Context, token string) (err error) {
+	filename, err := s.getFileName(ctx, token, ".metadata")
+	if err != nil {
+		return
+	}
+
 	key := storj.JoinPaths(token, filename)
-
 	s.logger.Printf("Deleting file %s from Storj Bucket", filename)
+	_, err = s.project.DeleteObject(fpath.WithTempData(ctx, "", true), s.bucket.Name, key)
+	if err != nil {
+		return
+	}
 
+	filename, err = s.getFileName(ctx, token, "")
+	if err != nil {
+		return
+	}
+
+	key = storj.JoinPaths(token, filename)
+	s.logger.Printf("Deleting file %s from Storj Bucket", filename)
 	_, err = s.project.DeleteObject(fpath.WithTempData(ctx, "", true), s.bucket.Name, key)
 
 	return

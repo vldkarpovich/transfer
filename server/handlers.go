@@ -281,7 +281,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		templatePath = "download.markdown.html"
 
 		var reader io.ReadCloser
-		if reader, _, err = s.storage.Get(r.Context(), token, filename, nil); err != nil {
+		if reader, _, _, err = s.storage.Get(r.Context(), token, filename, nil); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -307,9 +307,9 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		templatePath = "download.html"
 	}
 
-	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
+	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token)) //, metadata.DeletionToken)) //, filename))
 	resolvedURL := resolveURL(r, relativeURL, s.proxyPort)
-	relativeURLGet, _ := url.Parse(path.Join(s.proxyPath, getPathPart, token, filename))
+	relativeURLGet, _ := url.Parse(path.Join(s.proxyPath, getPathPart, token)) //filename))
 	resolvedURLGet := resolveURL(r, relativeURLGet, s.proxyPort)
 	var png []byte
 	png, err = qrcode.Encode(resolvedURL, qrcode.High, 150)
@@ -694,7 +694,7 @@ func (s *Server) putHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Printf("Uploading %s %s %d %s", token, filename, contentLength, contentType)
+	s.logger.Printf("Uploading %s %d %s", token, contentLength, contentType)
 
 	reader, err := attachEncryptionReader(reader, r.Header.Get("X-Encrypt-Password"))
 	if err != nil {
@@ -712,9 +712,9 @@ func (s *Server) putHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 
-	filename = url.PathEscape(filename)
-	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
-	deleteURL, _ := url.Parse(path.Join(s.proxyPath, token, filename, metadata.DeletionToken))
+	//filename = url.PathEscape(filename)
+	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, ""))
+	deleteURL, _ := url.Parse(path.Join(s.proxyPath, token, metadata.DeletionToken))
 
 	w.Header().Set("X-Url-Delete", resolveURL(r, deleteURL, s.proxyPort))
 
@@ -830,16 +830,16 @@ func (metadata metadata) remainingLimitHeaderValues() (remainingDownloads, remai
 	return remainingDownloads, remainingDays
 }
 
-func (s *Server) lock(token, filename string) {
-	key := path.Join(token, filename)
+func (s *Server) lock(token string) {
+	key := path.Join(token)
 
 	lock, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
 
 	lock.(*sync.Mutex).Lock()
 }
 
-func (s *Server) unlock(token, filename string) {
-	key := path.Join(token, filename)
+func (s *Server) unlock(token string) {
+	key := path.Join(token)
 
 	lock, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
 
@@ -847,12 +847,12 @@ func (s *Server) unlock(token, filename string) {
 }
 
 func (s *Server) checkMetadata(ctx context.Context, token, filename string, increaseDownload bool) (metadata, error) {
-	s.lock(token, filename)
-	defer s.unlock(token, filename)
+	s.lock(token)
+	defer s.unlock(token)
 
 	var metadata metadata
 
-	r, _, err := s.storage.Get(ctx, token, fmt.Sprintf("%s.metadata", filename), nil)
+	r, _, _, err := s.storage.Get(ctx, token, ".metadata", nil)
 	defer storage.CloseCheck(r)
 
 	if err != nil {
@@ -882,13 +882,13 @@ func (s *Server) checkMetadata(ctx context.Context, token, filename string, incr
 	return metadata, nil
 }
 
-func (s *Server) checkDeletionToken(ctx context.Context, deletionToken, token, filename string) error {
-	s.lock(token, filename)
-	defer s.unlock(token, filename)
+func (s *Server) checkDeletionToken(ctx context.Context, deletionToken, token string) error {
+	s.lock(token)
+	defer s.unlock(token)
 
 	var metadata metadata
 
-	r, _, err := s.storage.Get(ctx, token, fmt.Sprintf("%s.metadata", filename), nil)
+	r, _, _, err := s.storage.Get(ctx, token, ".metadata", nil)
 	defer storage.CloseCheck(r)
 
 	if s.storage.IsNotExist(err) {
@@ -923,16 +923,16 @@ func (s *Server) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	token := vars["token"]
-	filename := vars["filename"]
+	//filename := vars["filename"]
 	deletionToken := vars["deletionToken"]
 
-	if err := s.checkDeletionToken(r.Context(), deletionToken, token, filename); err != nil {
+	if err := s.checkDeletionToken(r.Context(), deletionToken, token); err != nil {
 		s.logger.Printf("Error metadata: %s", err.Error())
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
-	err := s.storage.Delete(r.Context(), token, filename)
+	err := s.storage.Delete(r.Context(), token)
 	if s.storage.IsNotExist(err) {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -966,7 +966,7 @@ func (s *Server) zipHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		reader, _, err := s.storage.Get(r.Context(), token, filename, nil)
+		reader, _, _, err := s.storage.Get(r.Context(), token, filename, nil)
 		defer storage.CloseCheck(reader)
 
 		if err != nil {
@@ -1036,7 +1036,7 @@ func (s *Server) tarGzHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		reader, contentLength, err := s.storage.Get(r.Context(), token, filename, nil)
+		reader, _, contentLength, err := s.storage.Get(r.Context(), token, filename, nil)
 		defer storage.CloseCheck(reader)
 
 		if err != nil {
@@ -1094,7 +1094,7 @@ func (s *Server) tarHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		reader, contentLength, err := s.storage.Get(r.Context(), token, filename, nil)
+		reader, _, contentLength, err := s.storage.Get(r.Context(), token, filename, nil)
 		defer storage.CloseCheck(reader)
 
 		if err != nil {
@@ -1188,7 +1188,7 @@ func (s *Server) getHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contentType := metadata.ContentType
-	reader, contentLength, err := s.storage.Get(r.Context(), token, filename, rng)
+	reader, filename, contentLength, err := s.storage.Get(r.Context(), token, filename, rng)
 	defer storage.CloseCheck(reader)
 
 	if s.storage.IsNotExist(err) {
