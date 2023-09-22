@@ -516,6 +516,12 @@ func (s *Server) Run() {
 			return false
 		}
 
+		parts := strings.Split(r.RequestURI, "/")
+		name := parts[len(parts)-2]
+		if name == "get" {
+			return false
+		}
+
 		match = r.Referer() == ""
 
 		u, err := url.Parse(r.Referer())
