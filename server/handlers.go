@@ -250,9 +250,9 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	token := vars["token"]
-	filename := vars["filename"]
+	//filename := vars["filename"]
 
-	metadata, err := s.checkMetadata(r.Context(), token, filename, false)
+	metadata, err := s.checkMetadata(r.Context(), token, "", false)
 
 	if err != nil {
 		s.logger.Printf("Error metadata: %s", err.Error())
@@ -261,7 +261,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contentType := metadata.ContentType
-	contentLength, err := s.storage.Head(r.Context(), token, filename)
+	contentLength, err := s.storage.Head(r.Context(), token, "")
 	if err != nil {
 		http.Error(w, http.StatusText(404), 404)
 		return
@@ -281,7 +281,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		templatePath = "download.markdown.html"
 
 		var reader io.ReadCloser
-		if reader, _, _, err = s.storage.Get(r.Context(), token, filename, nil); err != nil {
+		if reader, _, _, err = s.storage.Get(r.Context(), token, "", nil); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -339,7 +339,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 	}{
 		contentType,
 		content,
-		filename,
+		"",
 		resolvedURL,
 		resolvedURLGet,
 		token,

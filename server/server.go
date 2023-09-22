@@ -508,6 +508,26 @@ func (s *Server) Run() {
 		return
 	}).Methods("GET")
 
+	r.HandleFunc("/{token}/{filename}", s.previewHandler).MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool) { //r.HandleFunc("/{token}/{filename}", s.previewHandler).MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool)
+		// The file will show a preview page when opening the link in browser directly or
+		// from external link. If the referer url path and current path are the same it will be
+		// downloaded.
+		if !acceptsHTML(r.Header) {
+			return false
+		}
+
+		match = r.Referer() == ""
+
+		u, err := url.Parse(r.Referer())
+		if err != nil {
+			s.logger.Fatal(err)
+			return
+		}
+
+		match = match || (u.Path != r.URL.Path)
+		return
+	}).Methods("GET")
+
 	getHandlerFn := s.getHandler
 	if s.rateLimitRequests > 0 {
 		getHandlerFn = ratelimit.Request(ratelimit.IP).Rate(s.rateLimitRequests, 60*time.Second).LimitBy(memory.New())(http.HandlerFunc(getHandlerFn)).ServeHTTP
