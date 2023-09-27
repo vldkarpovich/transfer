@@ -243,16 +243,15 @@ func canContainsXSS(contentType string) bool {
 	return false
 }
 
-/* The preview handler will show a preview of the content for browsers (accept type text/html), and referer is not transfer.sh */
-func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) previewHandlerWithFileName(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Vary", "Range, Referer, X-Decrypt-Password")
 
 	vars := mux.Vars(r)
 
 	token := vars["token"]
-	//filename := vars["filename"]
+	filename := vars["filename"]
 
-	metadata, err := s.checkMetadata(r.Context(), token, "", false)
+	metadata, err := s.checkMetadata(r.Context(), token, filename, false)
 
 	if err != nil {
 		s.logger.Printf("Error metadata: %s", err.Error())
@@ -261,7 +260,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contentType := metadata.ContentType
-	contentLength, err := s.storage.Head(r.Context(), token, "")
+	contentLength, err := s.storage.Head(r.Context(), token, filename)
 	if err != nil {
 		http.Error(w, http.StatusText(404), 404)
 		return
@@ -281,7 +280,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		templatePath = "download.markdown.html"
 
 		var reader io.ReadCloser
-		if reader, _, _, err = s.storage.Get(r.Context(), token, "", nil); err != nil {
+		if reader, _, err = s.storage.GetWithFileName(r.Context(), token, filename, nil); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -307,9 +306,9 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		templatePath = "download.html"
 	}
 
-	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token)) //, metadata.DeletionToken)) //, filename))
+	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
 	resolvedURL := resolveURL(r, relativeURL, s.proxyPort)
-	relativeURLGet, _ := url.Parse(path.Join(s.proxyPath, getPathPart, token)) //filename))
+	relativeURLGet, _ := url.Parse(path.Join(s.proxyPath, getPathPart, token, filename))
 	resolvedURLGet := resolveURL(r, relativeURLGet, s.proxyPort)
 	var png []byte
 	png, err = qrcode.Encode(resolvedURL, qrcode.High, 150)
@@ -339,7 +338,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 	}{
 		contentType,
 		content,
-		"",
+		filename,
 		resolvedURL,
 		resolvedURLGet,
 		token,
@@ -355,6 +354,146 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+}
+
+/* The preview handler will show a preview of the content for browsers (accept type text/html), and referer is not transfer.sh */
+func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Vary", "Range, Referer, X-Decrypt-Password")
+
+	vars := mux.Vars(r)
+	token := vars["token"]
+
+	_, filename, _, err := s.storage.Get(r.Context(), token, "", nil)
+	if err != nil {
+		s.logger.Printf("Error get file: %s", err.Error())
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+
+	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
+	resolvedURLGet := resolveURL(r, relativeURL, s.proxyPort)
+
+	http.Redirect(w, r, resolvedURLGet, http.StatusPermanentRedirect)
+
+	// response, err := http.Get(resolvedURLGet)
+	// if err != nil {
+	// 	fmt.Printf("Ошибка при выполнении GET-запроса: %v\n", err)
+	// 	return
+	// }
+	// defer response.Body.Close()
+
+	// // Обрабатываем ответ
+	// if response.StatusCode == http.StatusOK {
+	// 	fmt.Printf("GET-запрос выполнен успешно. Статус код: %d\n", response.StatusCode)
+	// 	// Здесь вы можете обработать содержимое ответа, если необходимо
+	// } else {
+	// 	fmt.Printf("GET-запрос завершился с ошибкой. Статус код: %d\n", response.StatusCode)
+	// }
+
+	//metadata, err := s.checkMetadata(r.Context(), token, "", false)
+
+	// if err != nil {
+	// 	s.logger.Printf("Error metadata: %s", err.Error())
+	// 	http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+	// 	return
+	// }
+
+	// //contentType := metadata.ContentType
+	// _, err = s.storage.Head(r.Context(), token, "")
+	// if err != nil {
+	// 	http.Error(w, http.StatusText(404), 404)
+	// 	return
+	// }
+
+	// var templatePath string
+	// var content htmlTemplate.HTML
+
+	// switch {
+	// case strings.HasPrefix(contentType, "image/"):
+	// 	templatePath = "download.image.html"
+	// case strings.HasPrefix(contentType, "video/"):
+	// 	templatePath = "download.video.html"
+	// case strings.HasPrefix(contentType, "audio/"):
+	// 	templatePath = "download.audio.html"
+	// case strings.HasPrefix(contentType, "text/"):
+	// 	templatePath = "download.markdown.html"
+
+	// 	var reader io.ReadCloser
+	// 	if reader, _, _, err = s.storage.Get(r.Context(), token, "", nil); err != nil {
+	// 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 		return
+	// 	}
+
+	// 	var data []byte
+	// 	data = make([]byte, _5M)
+	// 	if _, err = reader.Read(data); err != io.EOF && err != nil {
+	// 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 		return
+	// 	}
+
+	// 	if strings.HasPrefix(contentType, "text/x-markdown") || strings.HasPrefix(contentType, "text/markdown") {
+	// 		unsafe := blackfriday.Run(data)
+	// 		output := bluemonday.UGCPolicy().SanitizeBytes(unsafe)
+	// 		content = htmlTemplate.HTML(output)
+	// 	} else if strings.HasPrefix(contentType, "text/plain") {
+	// 		content = htmlTemplate.HTML(fmt.Sprintf("<pre>%s</pre>", html.EscapeString(string(data))))
+	// 	} else {
+	// 		templatePath = "download.sandbox.html"
+	// 	}
+
+	// default:
+	// 	templatePath = "download.html"
+	// }
+
+	// relativeURL, _ := url.Parse(path.Join(s.proxyPath, token)) //, metadata.DeletionToken)) //, filename))
+	// resolvedURL := resolveURL(r, relativeURL, s.proxyPort)
+	// relativeURLGet, _ := url.Parse(path.Join(s.proxyPath, getPathPart, token)) //filename))
+	// resolvedURLGet := resolveURL(r, relativeURLGet, s.proxyPort)
+	// var png []byte
+	// png, err = qrcode.Encode(resolvedURL, qrcode.High, 150)
+	// if err != nil {
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	return
+	// }
+
+	// qrCode := base64.StdEncoding.EncodeToString(png)
+
+	// hostname := getURL(r, s.proxyPort).Host
+	// webAddress := resolveWebAddress(r, s.proxyPath, s.proxyPort)
+
+	// data := struct {
+	// 	ContentType    string
+	// 	Content        htmlTemplate.HTML
+	// 	Filename       string
+	// 	URL            string
+	// 	URLGet         string
+	// 	URLRandomToken string
+	// 	Hostname       string
+	// 	WebAddress     string
+	// 	ContentLength  uint64
+	// 	GAKey          string
+	// 	UserVoiceKey   string
+	// 	QRCode         string
+	// }{
+	// 	contentType,
+	// 	content,
+	// 	"",
+	// 	resolvedURL,
+	// 	resolvedURLGet,
+	// 	token,
+	// 	hostname,
+	// 	webAddress,
+	// 	contentLength,
+	// 	s.gaKey,
+	// 	s.userVoiceKey,
+	// 	qrCode,
+	// }
+
+	// if err := htmlTemplates.ExecuteTemplate(w, templatePath, data); err != nil {
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	return
+	// }
 
 }
 
@@ -830,16 +969,16 @@ func (metadata metadata) remainingLimitHeaderValues() (remainingDownloads, remai
 	return remainingDownloads, remainingDays
 }
 
-func (s *Server) lock(token string) {
-	key := path.Join(token)
+func (s *Server) lock(token, filename string) {
+	key := path.Join(token, filename)
 
 	lock, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
 
 	lock.(*sync.Mutex).Lock()
 }
 
-func (s *Server) unlock(token string) {
-	key := path.Join(token)
+func (s *Server) unlock(token, filename string) {
+	key := path.Join(token, filename)
 
 	lock, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
 
@@ -847,12 +986,12 @@ func (s *Server) unlock(token string) {
 }
 
 func (s *Server) checkMetadata(ctx context.Context, token, filename string, increaseDownload bool) (metadata, error) {
-	s.lock(token)
-	defer s.unlock(token)
+	s.lock(token, filename)
+	defer s.unlock(token, filename)
 
 	var metadata metadata
 
-	r, _, _, err := s.storage.Get(ctx, token, ".metadata", nil)
+	r, _, err := s.storage.GetWithFileName(ctx, token, fmt.Sprintf("%s.metadata", filename), nil)
 	defer storage.CloseCheck(r)
 
 	if err != nil {
@@ -882,13 +1021,13 @@ func (s *Server) checkMetadata(ctx context.Context, token, filename string, incr
 	return metadata, nil
 }
 
-func (s *Server) checkDeletionToken(ctx context.Context, deletionToken, token string) error {
-	s.lock(token)
-	defer s.unlock(token)
+func (s *Server) checkDeletionToken(ctx context.Context, deletionToken, token, filename string) error {
+	s.lock(token, filename)
+	defer s.unlock(token, filename)
 
 	var metadata metadata
 
-	r, _, _, err := s.storage.Get(ctx, token, ".metadata", nil)
+	r, _, err := s.storage.GetWithFileName(ctx, token, fmt.Sprintf("%s.metadata", filename), nil)
 	defer storage.CloseCheck(r)
 
 	if s.storage.IsNotExist(err) {
@@ -923,16 +1062,16 @@ func (s *Server) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	token := vars["token"]
-	//filename := vars["filename"]
+	filename := vars["filename"]
 	deletionToken := vars["deletionToken"]
 
-	if err := s.checkDeletionToken(r.Context(), deletionToken, token); err != nil {
+	if err := s.checkDeletionToken(r.Context(), deletionToken, token, filename); err != nil {
 		s.logger.Printf("Error metadata: %s", err.Error())
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
-	err := s.storage.Delete(r.Context(), token)
+	err := s.storage.Delete(r.Context(), token, filename)
 	if s.storage.IsNotExist(err) {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -966,7 +1105,7 @@ func (s *Server) zipHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		reader, _, _, err := s.storage.Get(r.Context(), token, filename, nil)
+		reader, _, err := s.storage.GetWithFileName(r.Context(), token, filename, nil)
 		defer storage.CloseCheck(reader)
 
 		if err != nil {
@@ -1036,7 +1175,7 @@ func (s *Server) tarGzHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		reader, _, contentLength, err := s.storage.Get(r.Context(), token, filename, nil)
+		reader, contentLength, err := s.storage.GetWithFileName(r.Context(), token, filename, nil)
 		defer storage.CloseCheck(reader)
 
 		if err != nil {
@@ -1094,7 +1233,7 @@ func (s *Server) tarHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		reader, _, contentLength, err := s.storage.Get(r.Context(), token, filename, nil)
+		reader, contentLength, err := s.storage.GetWithFileName(r.Context(), token, filename, nil)
 		defer storage.CloseCheck(reader)
 
 		if err != nil {
@@ -1188,7 +1327,7 @@ func (s *Server) getHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contentType := metadata.ContentType
-	reader, filename, contentLength, err := s.storage.Get(r.Context(), token, filename, rng)
+	reader, contentLength, err := s.storage.GetWithFileName(r.Context(), token, filename, rng)
 	defer storage.CloseCheck(reader)
 
 	if s.storage.IsNotExist(err) {

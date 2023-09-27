@@ -92,12 +92,14 @@ func ParseRange(rng string) *Range {
 type Storage interface {
 	// Get retrieves a file from storage
 	Get(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, fName string, contentLength uint64, err error)
+	//GetFileName(ctx context.Context, token string, metaFlag string) (fileName string, err error)
+	GetWithFileName(ctx context.Context, token string, filename string, rng *Range) (reader io.ReadCloser, contentLength uint64, err error)
 	// Head retrieves content length of a file from storage
 	Head(ctx context.Context, token string, filename string) (contentLength uint64, err error)
 	// Put saves a file on storage
 	Put(ctx context.Context, token string, filename string, reader io.Reader, contentType string, contentLength uint64) error
 	// Delete removes a file from storage
-	Delete(ctx context.Context, token string) error
+	Delete(ctx context.Context, token string, filename string) error
 	// IsNotExist indicates if a file doesn't exist on storage
 	IsNotExist(err error) bool
 	// Purge cleans up the storage
