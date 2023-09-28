@@ -496,6 +496,34 @@ func (s *Server) Run() {
 			return false
 		}
 
+		parts := strings.Split(r.RequestURI, "/")
+		name := parts[len(parts)-2]
+		if name == "get" {
+			return false
+		}
+
+		match = r.Referer() == ""
+
+		u, err := url.Parse(r.Referer())
+		if err != nil {
+			s.logger.Fatal(err)
+			return
+		}
+
+		match = match || (u.Path != r.URL.Path)
+		return
+	}).Methods("GET")
+
+	r.HandleFunc("/{token}", s.previewHandler).Methods("GET").MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool) { //r.HandleFunc("/{token}/{filename}", s.previewHandler).MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool)
+		// The file will show a preview page when opening the link in browser directly or
+		// from external link. If the referer url path and current path are the same it will be
+		// downloaded.
+
+		parts := strings.Split(r.RequestURI, "/")
+		name := parts[len(parts)-2]
+		if name == "get" {
+			return false
+		}
 		match = r.Referer() == ""
 
 		u, err := url.Parse(r.Referer())
@@ -521,7 +549,6 @@ func (s *Server) Run() {
 		if name == "get" {
 			return false
 		}
-
 		match = r.Referer() == ""
 
 		u, err := url.Parse(r.Referer())
@@ -539,7 +566,7 @@ func (s *Server) Run() {
 		getHandlerFn = ratelimit.Request(ratelimit.IP).Rate(s.rateLimitRequests, 60*time.Second).LimitBy(memory.New())(http.HandlerFunc(getHandlerFn)).ServeHTTP
 	}
 
-	r.HandleFunc("/{token}", getHandlerFn).Methods("GET")                                  //r.HandleFunc("/{token}/{filename}", getHandlerFn).Methods("GET")
+	r.HandleFunc("/{token}/{filename}", getHandlerFn).Methods("GET")                       //r.HandleFunc("/{token}", getHandlerFn).Methods("GET")
 	r.HandleFunc("/{action:(?:download|get|inline)}/{token}", getHandlerFn).Methods("GET") //r.HandleFunc("/{action:(?:download|get|inline)}/{token}/{filename}", getHandlerFn).Methods("GET")
 	r.HandleFunc("/{action:(?:download|get|inline)}/{token}/{filename}", getHandlerFn).Methods("GET")
 

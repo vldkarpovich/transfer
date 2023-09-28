@@ -374,7 +374,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
 	resolvedURLGet := resolveURL(r, relativeURL, s.proxyPort)
 
-	http.Redirect(w, r, resolvedURLGet, http.StatusPermanentRedirect)
+	http.Redirect(w, r, resolvedURLGet, http.StatusFound)
 
 	// response, err := http.Get(resolvedURLGet)
 	// if err != nil {
