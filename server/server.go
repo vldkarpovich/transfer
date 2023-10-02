@@ -514,28 +514,6 @@ func (s *Server) Run() {
 		return
 	}).Methods("GET")
 
-	r.HandleFunc("/{token}", s.previewHandler).Methods("GET").MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool) { //r.HandleFunc("/{token}/{filename}", s.previewHandler).MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool)
-		// The file will show a preview page when opening the link in browser directly or
-		// from external link. If the referer url path and current path are the same it will be
-		// downloaded.
-
-		parts := strings.Split(r.RequestURI, "/")
-		name := parts[len(parts)-2]
-		if name == "get" {
-			return false
-		}
-		match = r.Referer() == ""
-
-		u, err := url.Parse(r.Referer())
-		if err != nil {
-			s.logger.Fatal(err)
-			return
-		}
-
-		match = match || (u.Path != r.URL.Path)
-		return
-	}).Methods("GET")
-
 	r.HandleFunc("/{token}/{filename}", s.previewHandlerWithFileName).MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool) { //r.HandleFunc("/{token}/{filename}", s.previewHandler).MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool)
 		// The file will show a preview page when opening the link in browser directly or
 		// from external link. If the referer url path and current path are the same it will be

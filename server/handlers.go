@@ -370,6 +370,11 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
+	if filename == "" {
+		s.logger.Printf("Error get file: %s", err.Error())
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
 
 	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
 	resolvedURLGet := resolveURL(r, relativeURL, s.proxyPort)
