@@ -371,7 +371,7 @@ func (s *Server) previewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if filename == "" {
-		s.logger.Printf("Error get file: %s", err.Error())
+		s.logger.Printf("Error get file: Fiel not found!")
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
